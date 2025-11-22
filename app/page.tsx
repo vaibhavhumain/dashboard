@@ -81,6 +81,12 @@ export default function DashboardPage() {
   const [showWeekPicker, setShowWeekPicker] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState<WeekRange | null>(null);
 
+  // NEW: which chart is visible
+  const [selectedChart, setSelectedChart] = useState<'sales' | 'revenue' | 'person'>('sales');
+
+  // NEW: year filter for Revenue Over Time
+  const [selectedYear, setSelectedYear] = useState<string>('all');
+
   async function fetchData() {
     try {
       const res = await fetch('/api/dashboard-data');
@@ -201,6 +207,33 @@ export default function DashboardPage() {
     selectedMonth !== 'all'
       ? getWeeksOfMonth(selectedMonth)
       : [];
+
+  // Available years for year dropdown (Revenue Over Time)
+  const availableYears = Array.from(new Set(data.map((r) => r.Year))).filter(
+    (y) => y && y !== 'Unknown',
+  );
+
+  // Month-wise revenue for Revenue Over Time (grouped by Month + Year)
+  const revenueByMonth = Object.values(
+    filteredData.reduce((acc: Record<string, { Month: string; Revenue: number }>, row) => {
+      const year = row.Year;
+      const month = row.Month;
+
+      // Apply year filter
+      if (selectedYear !== 'all' && selectedYear !== year) return acc;
+
+      const key = `${month} ${year}`;
+      if (!acc[key]) {
+        acc[key] = { Month: key, Revenue: 0 };
+      }
+      acc[key].Revenue += row.Revenue;
+      return acc;
+    }, {}),
+  ).sort(
+    (a, b) =>
+      dayjs(a.Month, 'MMMM YYYY').toDate().getTime() -
+      dayjs(b.Month, 'MMMM YYYY').toDate().getTime(),
+  );
 
   return (
     <>
@@ -364,68 +397,108 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Charts Row (3 in one row on large screens) */}
-          {/* Bar Chart */}
-          <div className="bg-slate-900 p-6 rounded-2xl shadow-lg">
-            <h2 className="text-lg font-semibold mb-3">Sales Entries Per Day</h2>
-            <div style={{ width: '100%', height: 300 }}>
-              <ResponsiveContainer>
-                <BarChart data={filteredData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="Date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="SalesCount" fill="#00bfff" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+        {/* Chart Selection + Year Dropdown */}
+        <div className="mb-6 flex gap-4 items-center flex-wrap">
+          {/* Chart Type Dropdown */}
+          <select
+            value={selectedChart}
+            onChange={(e) =>
+              setSelectedChart(e.target.value as 'sales' | 'revenue' | 'person')
+            }
+            className="bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-sm font-semibold"
+          >
+            <option value="sales">Sales Entries Per Day</option>
+            <option value="revenue">Revenue Over Time</option>
+            <option value="person">Revenue By Sales Person</option>
+          </select>
 
-          {/* Line Chart */}
-          <div className="bg-slate-900 p-6 rounded-2xl shadow-lg">
-            <h2 className="text-lg font-semibold mb-3">Revenue Over Time</h2>
-            <div style={{ width: '100%', height: 300 }}>
-              <ResponsiveContainer>
-                <LineChart data={filteredData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="Date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="Revenue"
-                    stroke="#00ffaa"
-                    strokeWidth={2}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Pie Chart */}
-          <div className="bg-slate-900 p-6 rounded-2xl shadow-lg">
-            <h2 className="text-lg font-semibold mb-3">Revenue by Sales Person</h2>
-            <div style={{ width: '100%', height: 300 }}>
-              <ResponsiveContainer>
-                <PieChart>
-                  <Pie
-                    data={salesByPerson}
-                    dataKey="revenue"
-                    nameKey="name"
-                    outerRadius={100}
-                    label
-                  >
-                    {salesByPerson.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          {/* Year Dropdown ONLY for Revenue Over Time */}
+          {selectedChart === 'revenue' && (
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-sm font-semibold"
+            >
+              <option value="all">All Years</option>
+              {availableYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
+
+        {/* Selected Chart */}
+        <div className="bg-slate-900 p-6 rounded-2xl shadow-lg">
+          {selectedChart === 'sales' && (
+            <>
+              <h2 className="text-lg font-semibold mb-3">Sales Entries Per Day</h2>
+              <div style={{ width: '100%', height: 300 }}>
+                <ResponsiveContainer>
+                  <BarChart data={filteredData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="Date" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="SalesCount" fill="#00bfff" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
+
+          {selectedChart === 'revenue' && (
+            <>
+              <h2 className="text-lg font-semibold mb-3">
+                Revenue Over Time (Month-wise)
+                {selectedYear !== 'all' && ` – ${selectedYear}`}
+              </h2>
+              <div style={{ width: '100%', height: 300 }}>
+                <ResponsiveContainer>
+                  <LineChart data={revenueByMonth}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="Month" />
+                    <YAxis />
+                    <Tooltip />
+                    <Line
+                      type="monotone"
+                      dataKey="Revenue"
+                      stroke="#00ffaa"
+                      strokeWidth={2}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
+
+          {selectedChart === 'person' && (
+            <>
+              <h2 className="text-lg font-semibold mb-3">Revenue by Sales Person</h2>
+              <div style={{ width: '100%', height: 300 }}>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={salesByPerson}
+                      dataKey="revenue"
+                      nameKey="name"
+                      outerRadius={100}
+                      label
+                    >
+                      {salesByPerson.map((_, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </>
   );
 }
